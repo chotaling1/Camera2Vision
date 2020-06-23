@@ -32,16 +32,16 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
-import android.support.annotation.IntDef;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresPermission;
-import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.util.SparseIntArray;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresPermission;
+import androidx.core.content.ContextCompat;
 
 import com.example.ezequiel.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;

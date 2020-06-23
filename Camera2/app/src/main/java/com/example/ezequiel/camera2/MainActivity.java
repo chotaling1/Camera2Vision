@@ -2,6 +2,7 @@ package com.example.ezequiel.camera2;
 
 import android.Manifest;
 import android.annotation.TargetApi;
+import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -10,10 +11,6 @@ import android.media.Image;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -22,6 +19,10 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.activity.*;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import com.example.ezequiel.camera2.others.Camera2Source;
 import com.example.ezequiel.camera2.others.FaceGraphic;
@@ -42,7 +43,7 @@ import com.example.ezequiel.camera2.others.CameraSource;
 import com.example.ezequiel.camera2.others.CameraSourcePreview;
 import com.example.ezequiel.camera2.others.GraphicOverlay;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
     private static final String TAG = "Ezequiel Adrian Camera";
     private Context context;
     private static final int REQUEST_CAMERA_PERMISSION = 200;
