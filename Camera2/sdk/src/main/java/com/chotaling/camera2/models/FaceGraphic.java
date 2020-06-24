@@ -1,5 +1,4 @@
-package com.example.ezequiel.camera2.others;
-
+package com.chotaling.camera2.models;
 /**
  * Created by Ezequiel Adrian on 26/02/2017.
  */
@@ -14,8 +13,7 @@ import android.graphics.Paint;
 import android.graphics.PointF;
 import android.graphics.PorterDuff;
 
-import com.example.ezequiel.camera2.R;
-import com.example.ezequiel.camera2.others.GraphicOverlay;
+import com.chotaling.camera2.R;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.Landmark;
 
@@ -60,6 +58,7 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
         opt.inScaled = false;
         resources = context.getResources();
         marker = BitmapFactory.decodeResource(resources, R.drawable.marker, opt);
+
     }
 
     public void setId(int id) {
@@ -182,5 +181,6 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
             canvas.drawBitmap(marker, leftCheek.x, leftCheek.y, null);
         if(rightCheek != null)
             canvas.drawBitmap(marker, rightCheek.x, rightCheek.y, null);
+
     }
 }

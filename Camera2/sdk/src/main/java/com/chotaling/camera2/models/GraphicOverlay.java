@@ -1,5 +1,4 @@
-package com.example.ezequiel.camera2.others;
-
+package com.chotaling.camera2.models;
 /**
  * Created by Ezequiel on 27/11/2016.
  */

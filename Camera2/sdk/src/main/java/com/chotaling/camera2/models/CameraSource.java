@@ -1,5 +1,4 @@
-package com.example.ezequiel.camera2.others;
-
+package com.chotaling.camera2.models;
 /*
  * Copyright (C) The Android Open Source Project
  *
@@ -45,7 +44,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.annotation.StringDef;
 
-import com.example.ezequiel.camera2.utils.Utils;
+import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
 import com.google.android.gms.vision.Frame;

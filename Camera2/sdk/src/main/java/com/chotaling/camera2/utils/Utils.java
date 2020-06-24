@@ -1,4 +1,4 @@
-package com.example.ezequiel.camera2.utils;
+package com.chotaling.camera2.utils;
 
 /**
  * Created by Ezequiel Adrian on 24/02/2017.

@@ -1,4 +1,4 @@
-package com.example.ezequiel.camera2.others;
+package com.chotaling.camera2.models;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -43,7 +43,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.core.content.ContextCompat;
 
-import com.example.ezequiel.camera2.utils.Utils;
+import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
 import com.google.android.gms.vision.Frame;
@@ -706,6 +706,21 @@ public class Camera2Source {
     }
 
     public void recordVideo(VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
+
+            videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
+            MediaRecorder mediaRecorder = new MediaRecorder();
+            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mediaRecorder.setOutputFile(videoFile);
+            mediaRecorder.setVideoEncodingBitRate(10000000);
+            mediaRecorder.setVideoFrameRate(30);
+            mediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
+            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+
+            recordVideo(mediaRecorder, videoStartCallback, videoStopCallback, videoErrorCallback);
+    }
+
+    public void recordVideo(MediaRecorder mediaRecorder, VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
         try {
             this.videoStartCallback = videoStartCallback;
             this.videoStopCallback = videoStopCallback;
@@ -714,17 +729,7 @@ public class Camera2Source {
                 this.videoErrorCallback.onVideoError("Camera not ready.");
                 return;
             }
-            videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
-            mMediaRecorder = new MediaRecorder();
-            //mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-            mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-            mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            mMediaRecorder.setOutputFile(videoFile);
-            mMediaRecorder.setVideoEncodingBitRate(10000000);
-            mMediaRecorder.setVideoFrameRate(30);
-            mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
-            mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            //mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            mMediaRecorder = mediaRecorder;
             if(swappedDimensions) {
                 mMediaRecorder.setOrientationHint(INVERSE_ORIENTATIONS.get(mDisplayOrientation));
             } else {

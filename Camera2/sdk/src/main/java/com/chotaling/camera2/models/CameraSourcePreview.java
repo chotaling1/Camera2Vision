@@ -1,4 +1,4 @@
-package com.example.ezequiel.camera2.others;
+package com.chotaling.camera2.models;
 
 import android.content.Context;
 import android.graphics.SurfaceTexture;
@@ -11,7 +11,7 @@ import android.view.TextureView;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 
-import com.example.ezequiel.camera2.utils.Utils;
+import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;
 
 import java.io.IOException;

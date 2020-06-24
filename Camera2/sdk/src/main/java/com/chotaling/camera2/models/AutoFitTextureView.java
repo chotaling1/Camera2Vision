@@ -1,4 +1,4 @@
-package com.example.ezequiel.camera2.others;
+package com.chotaling.camera2.models;
 
 import android.content.Context;
 import android.util.AttributeSet;
