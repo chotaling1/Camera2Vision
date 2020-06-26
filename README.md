@@ -24,6 +24,9 @@ Tested and working on:
 * Motorola G2 XT1072 (API Level: 23)
 * Samsung Galaxy Core (API Level: 18)
 * Pixel (API Level: 25)
+* Samsung Galaxy S6
+* Samsung Galaxy S9+
+* LG G7 ThinQ
 
 Please let me know if you test with success on your devices so I can update this list.
 
