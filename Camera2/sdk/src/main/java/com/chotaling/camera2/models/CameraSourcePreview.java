@@ -1,6 +1,7 @@
 package com.chotaling.camera2.models;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -128,7 +129,7 @@ public class CameraSourcePreview extends ViewGroup {
                             int max = Math.max(size.getWidth(), size.getHeight());
                             // FOR GRAPHIC OVERLAY, THE PREVIEW SIZE WAS REDUCED TO QUARTER
                             // IN ORDER TO PREVENT CPU OVERLOAD
-                            mOverlay.setCameraInfo(min/4, max/4, mCameraSource.getCameraFacing());
+                            mOverlay.setCameraInfo(min, max, mCameraSource.getCameraFacing());
                             mOverlay.clear();
                         } else {
                             stop();
@@ -144,7 +145,7 @@ public class CameraSourcePreview extends ViewGroup {
                             int max = Math.max(size.getWidth(), size.getHeight());
                             // FOR GRAPHIC OVERLAY, THE PREVIEW SIZE WAS REDUCED TO QUARTER
                             // IN ORDER TO PREVENT CPU OVERLOAD
-                            mOverlay.setCameraInfo(min/4, max/4, mCamera2Source.getCameraFacing());
+                            mOverlay.setCameraInfo(min, max, mCamera2Source.getCameraFacing());
                             mOverlay.clear();
                         } else {
                             stop();
@@ -190,43 +191,75 @@ public class CameraSourcePreview extends ViewGroup {
     };
 
     @Override
-    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-        int width = 480;
-        int height = 720;
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom)
+    {
+        int width = 320;
+        int height = 240;
         if(usingCameraOne) {
             if (mCameraSource != null) {
                 Size size = mCameraSource.getPreviewSize();
                 if (size != null) {
-                    // Swap width and height sizes when in portrait, since it will be rotated 90 degrees
-                    height = size.getWidth();
-                    width = size.getHeight();
+                    height = size.getHeight();
+                    width = size.getWidth();
                 }
             }
         } else {
             if (mCamera2Source != null) {
                 Size size = mCamera2Source.getPreviewSize();
                 if (size != null) {
-                    // Swap width and height sizes when in portrait, since it will be rotated 90 degrees
-                    height = size.getWidth();
-                    width = size.getHeight();
+                    height = size.getHeight();
+                    width = size.getWidth();
                 }
             }
         }
 
+        if (IsPortraitMode())
+        {
+            int tmp = width;
+            width = height;
+            height = tmp;
+        }
+
+
         //RESIZE PREVIEW IGNORING ASPECT RATIO. THIS IS ESSENTIAL.
-        int newWidth = (height * screenWidth) / screenHeight;
+        int newHeight = (width * getHeight()) / getWidth();
 
         final int layoutWidth = right - left;
         final int layoutHeight = bottom - top;
         // Computes height and width for potentially doing fit width.
+
+
         int childWidth = layoutWidth;
-        int childHeight = (int)(((float) layoutWidth / (float) newWidth) * height);
+        int childHeight = (int)(((float) layoutWidth / (float) width) * newHeight);
         // If height is too tall using fit width, does fit height instead.
         if (childHeight > layoutHeight) {
             childHeight = layoutHeight;
-            childWidth = (int)(((float) layoutHeight / (float) height) * newWidth);
+            childWidth = (int)(((float) layoutHeight / (float) newHeight) * width);
         }
-        for (int i = 0; i < getChildCount(); ++i) {getChildAt(i).layout(0, 0, childWidth, childHeight);}
-        try {startIfReady();} catch (IOException e) {Log.e(TAG, "Could not start camera source.", e);}
+        for (int i = 0; i < getChildCount(); ++i)
+        {
+            getChildAt(i).layout(0, 0, childWidth, childHeight);
+        }
+        try
+        {
+            startIfReady();
+        }
+        catch (IOException e)
+        {
+            Log.e(TAG, "Could not start camera source.", e);
+        }
+
+    }
+
+    private boolean IsPortraitMode()
+    {
+        int orientation = getContext().getResources().getConfiguration().orientation;
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE)
+            return false;
+        if (orientation == Configuration.ORIENTATION_PORTRAIT)
+            return true;
+
+        Log.d(TAG, "isPortraitMode returning false by default");
+        return false;
     }
 }

@@ -6,6 +6,8 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Point;
@@ -33,16 +35,20 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.widget.Toast;
+
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.core.content.ContextCompat;
 
+import com.chotaling.camera2.enums.AspectRatio;
+import com.chotaling.camera2.enums.MediaQuality;
 import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
@@ -105,6 +111,11 @@ public class Camera2Source {
     private boolean cameraStarted = false;
     private int mSensorOrientation;
 
+    private static float ASPECT_RATIO_16_9 = 16f/9f;
+    private static float ASPECT_RATIO_4_3 = 4f/3f;
+    private AspectRatio mAspectRatio;
+
+    private MediaQuality mMediaQuality;
     /**
      * A reference to the opened {@link CameraDevice}.
      */
@@ -173,12 +184,14 @@ public class Camera2Source {
      * The {@link Size} of camera preview.
      */
     private Size mPreviewSize;
-
     /**
      * The {@link Size} of Media Recorder.
      */
     private Size mVideoSize;
-
+    public Size getVideoSize()
+    {
+        return mVideoSize;
+    }
     private MediaRecorder mMediaRecorder;
     private SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
     private String videoFile;
@@ -355,7 +368,11 @@ public class Camera2Source {
             if(mImage == null) {
                 return;
             }
-            mFrameProcessor.setNextFrame(convertYUV420888ToNV21(mImage));
+            mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+//            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
+//            byte[] bytes = new byte[buffer.capacity()];
+//            buffer.get(bytes);
+//            mFrameProcessor.setNextFrame(bytes);
             mImage.close();
         }
     };
@@ -430,6 +447,18 @@ public class Camera2Source {
             return this;
         }
 
+        public Builder setAspectRatio(AspectRatio aspectRatio)
+        {
+            mCameraSource.mAspectRatio = aspectRatio;
+            return this;
+        }
+
+        public Builder setMediaQuality(MediaQuality quality)
+        {
+            mCameraSource.mMediaQuality = quality;
+            return this;
+        }
+
         /**
          * Sets the camera to use (either {@link #CAMERA_FACING_BACK} or
          * {@link #CAMERA_FACING_FRONT}). Default: back facing.
@@ -446,6 +475,15 @@ public class Camera2Source {
          * Creates an instance of the camera source.
          */
         public Camera2Source build() {
+            if (mCameraSource.mMediaQuality == null)
+            {
+                mCameraSource.mMediaQuality = MediaQuality.High;
+            }
+
+            if (mCameraSource.mAspectRatio == null)
+            {
+                mCameraSource.mAspectRatio = AspectRatio.ASPECT_RATIO_16_9;
+            }
             mCameraSource.mFrameProcessor = mCameraSource.new FrameProcessingRunnable(mDetector);
             return mCameraSource;
         }
@@ -648,6 +686,11 @@ public class Camera2Source {
         return mPreviewSize;
     }
 
+
+    public int getSensorOrientation() {
+        return mSensorOrientation;
+    }
+
     /**
      * Returns the selected camera; one of {@link #CAMERA_FACING_BACK} or
      * {@link #CAMERA_FACING_FRONT}.
@@ -752,9 +795,9 @@ public class Camera2Source {
         createCameraPreviewSession();
     }
 
-    private Size getBestAspectPictureSize(android.util.Size[] supportedPictureSizes) {
-        float targetRatio = Utils.getScreenRatio(mContext);
-        Size bestSize = null;
+    private TreeMap<Double, List<android.util.Size>> getAspectPictureSizes(android.util.Size[] supportedPictureSizes)
+    {
+        float targetRatio = (mAspectRatio.equals(AspectRatio.ASPECT_RATIO_4_3)) ? (ASPECT_RATIO_4_3) : (ASPECT_RATIO_16_9);
         TreeMap<Double, List<android.util.Size>> diffs = new TreeMap<>();
 
         //Select supported sizes which ratio is less than ratioTolerance
@@ -791,19 +834,86 @@ public class Camera2Source {
             }
         }
 
-        //Select the highest resolution from the ratio filtered ones.
+        for (Map.Entry entry : diffs.entrySet())
+        {
+            Collections.sort((List<android.util.Size>)entry.getValue(),
+                (o1, o2) ->
+                {
+                    int heightCompare = Integer.compare(o1.getHeight(), o2.getHeight());
+                    int widthCompare = Integer.compare(o1.getWidth(), o2.getWidth());
+
+                    if (heightCompare < 0 || widthCompare < 0)
+                    {
+                        return -1;
+                    }
+
+                    if (heightCompare > 0 || widthCompare > 0)
+                    {
+                        return 1;
+                    }
+
+                    return 0;
+                });
+        }
+
+        return diffs;
+    }
+
+    private Size getBestAspectPictureSize(android.util.Size[] supportedPictureSizes)
+    {
+        TreeMap<Double, List<android.util.Size>> diffs = getAspectPictureSizes(supportedPictureSizes);
+        android.util.Size bestSize = null;
         for (Map.Entry entry: diffs.entrySet()){
             List<?> entries = (List) entry.getValue();
-            for (int i=0; i<entries.size(); i++) {
-                android.util.Size s = (android.util.Size) entries.get(i);
-                if(bestSize == null) {
-                    bestSize = new Size(s.getWidth(), s.getHeight());
-                } else if(bestSize.getWidth() < s.getWidth() || bestSize.getHeight() < s.getHeight()) {
-                    bestSize = new Size(s.getWidth(), s.getHeight());
+            if (!entries.isEmpty())
+            {
+                bestSize = (android.util.Size) entries.get(entries.size() - 1);
+                if ((double) entry.getKey() == ratioTolerance)
+                {
+                    return new Size(bestSize.getWidth(), bestSize.getHeight());
                 }
             }
         }
-        return bestSize;
+        return new Size(bestSize.getWidth(), bestSize.getHeight());
+    }
+
+    private Size getMediumAspectPictureSize(android.util.Size[] supportedPictureSizes)
+    {
+        TreeMap<Double, List<android.util.Size>> diffs = getAspectPictureSizes(supportedPictureSizes);
+        android.util.Size bestSize = null;
+        //Select the highest resolution from the ratio filtered ones.
+        for (Map.Entry entry: diffs.entrySet()){
+            List<?> entries = (List) entry.getValue();
+            if (!entries.isEmpty())
+            {
+                int index = entries.size()/2;
+                bestSize = (android.util.Size) entries.get(index);
+                if ((double) entry.getKey() == ratioTolerance)
+                {
+                    return new Size(bestSize.getWidth(), bestSize.getHeight());
+                }
+            }
+        }
+        return new Size(bestSize.getWidth(), bestSize.getHeight());
+    }
+
+    private Size getLowestAspectPictureSize(android.util.Size[] supportedPictureSizes)
+    {
+        TreeMap<Double, List<android.util.Size>> diffs = getAspectPictureSizes(supportedPictureSizes);
+        android.util.Size bestSize = null;
+        //Select the highest resolution from the ratio filtered ones.
+        for (Map.Entry entry: diffs.entrySet()){
+            List<?> entries = (List) entry.getValue();
+            if (!entries.isEmpty())
+            {
+                bestSize = (android.util.Size) entries.get(0);
+                if ((double) entry.getKey() == ratioTolerance)
+                {
+                    return new Size(bestSize.getWidth(), bestSize.getHeight());
+                }
+            }
+        }
+        return new Size(bestSize.getWidth(), bestSize.getHeight());
     }
 
     /**
@@ -861,9 +971,9 @@ public class Camera2Source {
      * @param choices The list of available sizes
      * @return The video size
      */
-    private static Size chooseVideoSize(Size[] choices) {
+    private static Size chooseVideoSize(Size[] choices, Size aspectRatio) {
         for (Size size : choices) {
-            if (size.getWidth() == size.getHeight() * 16 / 9)
+            if (size.getWidth() == size.getHeight() * (aspectRatio.getWidth()/ aspectRatio.getHeight()))
             {
                 return size;
             }
@@ -937,8 +1047,22 @@ public class Camera2Source {
             if (map == null) {return;}
 
             // For still image captures, we use the largest available size.
-            Size largest = getBestAspectPictureSize(map.getOutputSizes(ImageFormat.JPEG));
-            mImageReaderStill = ImageReader.newInstance(largest.getWidth(), largest.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
+            Size preferredAspectPictureSize = null;
+            switch (mMediaQuality)
+            {
+                case Low:
+                    preferredAspectPictureSize = getLowestAspectPictureSize(map.getOutputSizes(ImageFormat.JPEG));
+                    break;
+                case Medium:
+                    preferredAspectPictureSize = getMediumAspectPictureSize(map.getOutputSizes(ImageFormat.JPEG));
+                    break;
+                case High:
+                default:
+                    preferredAspectPictureSize = getBestAspectPictureSize(map.getOutputSizes(ImageFormat.JPEG));
+                    break;
+            }
+
+            mImageReaderStill = ImageReader.newInstance(preferredAspectPictureSize.getWidth(), preferredAspectPictureSize.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
             mImageReaderStill.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
@@ -995,8 +1119,8 @@ public class Camera2Source {
             // garbage capture data.
             Size[] outputSizes = Utils.sizeToSize(map.getOutputSizes(SurfaceTexture.class));
             Size[] outputSizesMediaRecorder = Utils.sizeToSize(map.getOutputSizes(MediaRecorder.class));
-            mPreviewSize = chooseOptimalSize(outputSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, largest);
-            mVideoSize = chooseVideoSize(outputSizesMediaRecorder);
+            mPreviewSize = chooseOptimalSize(outputSizes, rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth, maxPreviewHeight, preferredAspectPictureSize);
+            mVideoSize = chooseVideoSize(outputSizesMediaRecorder, preferredAspectPictureSize);
 
             // We fit the aspect ratio of TextureView to the size of preview we picked.
             int orientation = mDisplayOrientation;
@@ -1349,8 +1473,15 @@ public class Camera2Source {
                         return;
                     }
 
+//                    outputFrame = new Frame.Builder()
+//                            .setImageData(ByteBuffer.wrap(mPendingFrameData), mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.NV21)
+//                            .setId(mPendingFrameId)
+//                            .setTimestampMillis(mPendingTimeMillis)
+//                            .setRotation(getDetectorOrientation(mSensorOrientation))
+//                            .build();
+
                     outputFrame = new Frame.Builder()
-                            .setImageData(ByteBuffer.wrap(quarterNV21(mPendingFrameData, mPreviewSize.getWidth(), mPreviewSize.getHeight())), mPreviewSize.getWidth()/4, mPreviewSize.getHeight()/4, ImageFormat.NV21)
+                            .setImageData(ByteBuffer.wrap(mPendingFrameData), mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.NV21)
                             .setId(mPendingFrameId)
                             .setTimestampMillis(mPendingTimeMillis)
                             .setRotation(getDetectorOrientation(mSensorOrientation))
@@ -1405,6 +1536,76 @@ public class Camera2Source {
         }
     }
 
+    private byte[] YUV_420_888toNV21(Image image) {
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int ySize = width * height;
+        int uvSize = width * height / 4;
+
+        byte[] nv21 = new byte[ySize + uvSize * 2];
+
+        ByteBuffer yBuffer = image.getPlanes()[0].getBuffer(); // Y
+        ByteBuffer uBuffer = image.getPlanes()[1].getBuffer(); // U
+        ByteBuffer vBuffer = image.getPlanes()[2].getBuffer(); // V
+
+        int rowStride = image.getPlanes()[0].getRowStride();
+        assert (image.getPlanes()[0].getPixelStride() == 1);
+
+        int pos = 0;
+
+        if (rowStride == width) { // likely
+            yBuffer.get(nv21, 0, ySize);
+            pos += ySize;
+        } else {
+            int yBufferPos = width - rowStride; // not an actual position
+            for (; pos < ySize; pos += width) {
+                yBufferPos += rowStride - width;
+                yBuffer.position(yBufferPos);
+                yBuffer.get(nv21, pos, width);
+            }
+        }
+
+        rowStride = image.getPlanes()[2].getRowStride();
+        int pixelStride = image.getPlanes()[2].getPixelStride();
+
+        assert (rowStride == image.getPlanes()[1].getRowStride());
+        assert (pixelStride == image.getPlanes()[1].getPixelStride());
+
+        if (pixelStride == 2 && rowStride == width && uBuffer.get(0) == vBuffer.get(1)) {
+            // maybe V an U planes overlap as per NV21, which means vBuffer[1] is alias of uBuffer[0]
+            byte savePixel = vBuffer.get(1);
+            try {
+                vBuffer.put(1, (byte) ~savePixel);
+                if (uBuffer.get(0) == (byte) ~savePixel) {
+                    vBuffer.put(1, savePixel);
+                    vBuffer.get(nv21, ySize, uvSize);
+
+                    return nv21; // shortcut
+                }
+
+
+                // unfortunately, the check failed. We must save U and V pixel by pixel
+                vBuffer.put(1, savePixel);
+            } catch (Exception ex) {
+                // unfortunately, we cannot check if vBuffer and uBuffer overlap
+            }
+
+            // other optimizations could check if (pixelStride == 1) or (pixelStride == 2),
+            // but performance gain would be less significant
+
+            for (int row = 0; row < height / 2; row++) {
+                for (int col = 0; col < width / 2; col++) {
+                    int vuPos = col * pixelStride + row * rowStride;
+                    nv21[pos++] = vBuffer.get(vuPos);
+                    nv21[pos++] = uBuffer.get(vuPos);
+                }
+            }
+        }
+
+        return nv21;
+    }
+
     private byte[] convertYUV420888ToNV21(Image imgYUV420) {
         // Converting YUV_420_888 data to NV21.
         byte[] data;
@@ -1412,7 +1613,7 @@ public class Camera2Source {
         ByteBuffer buffer2 = imgYUV420.getPlanes()[2].getBuffer();
         int buffer0_size = buffer0.remaining();
         int buffer2_size = buffer2.remaining();
-        data = new byte[buffer0_size + buffer2_size];
+        data = new byte[buffer0_size];
         buffer0.get(data, 0, buffer0_size);
         buffer2.get(data, buffer0_size, buffer2_size);
         return data;
