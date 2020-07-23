@@ -7,7 +7,12 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
+import android.media.CamcorderProfile;
 import android.media.Image;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -36,10 +41,14 @@ import com.google.android.gms.vision.Tracker;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -115,7 +124,18 @@ public class MainActivity extends AppCompatActivity {
                     videoButton.setEnabled(false);
                     takePictureButton.setEnabled(false);
                     if(useCamera2) {
-                        if(mCamera2Source != null)mCamera2Source.takePicture(camera2SourceShutterCallback, camera2SourcePictureCallback);
+                        if(mCamera2Source != null)
+                        {
+                            if (!isRecordingVideo)
+                            {
+                                mCamera2Source.takePicture(camera2SourceShutterCallback, camera2SourcePictureCallback);
+                            }
+                            else
+                            {
+                                mCamera2Source.takePreviewSnapshot(camera2SourcePreviewSnapshotCallback);
+                            }
+
+                        }
                     } else {
                         if(mCameraSource != null)mCameraSource.takePicture(cameraSourceShutterCallback, cameraSourcePictureCallback);
                     }
@@ -126,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onClick(View v) {
                     switchButton.setEnabled(false);
-                    takePictureButton.setEnabled(false);
+                    //takePictureButton.setEnabled(false);
                     videoButton.setEnabled(false);
                     if(isRecordingVideo) {
                         if(useCamera2) {
@@ -313,6 +333,30 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    final Camera2Source.PreviewSnapshotCallback camera2SourcePreviewSnapshotCallback = new Camera2Source.PreviewSnapshotCallback() {
+        @Override
+        public void onPreviewSnapshotTaken(Bitmap bitmap) {
+
+
+            FileOutputStream fileOutputStream = null;
+            try {
+                fileOutputStream = new FileOutputStream(new File(Environment.getExternalStorageDirectory(), "/camera2_snapshot.png"));
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, fileOutputStream);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (fileOutputStream != null) {
+                        fileOutputStream.close();
+                    }
+
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    };
+
     private boolean checkGooglePlayAvailability() {
         GoogleApiAvailability googleApiAvailability = GoogleApiAvailability.getInstance();
         int resultCode = googleApiAvailability.isGooglePlayServicesAvailable(context);
@@ -374,6 +418,35 @@ public class MainActivity extends AppCompatActivity {
 
             startCameraSource();
         }
+    }
+
+    private MediaRecorder ConfigureMediaRecorder()
+    {
+        MediaRecorder mediaRecorder = new MediaRecorder();
+        try
+        {
+
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.DEFAULT);
+            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+
+            CamcorderProfile profile = CamcorderProfile.get(CamcorderProfile.QUALITY_480P);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+            mediaRecorder.setOutputFile(Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4");
+            mediaRecorder.setVideoEncodingBitRate(profile.videoBitRate);
+            mediaRecorder.setVideoFrameRate(profile.videoFrameRate);
+            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+
+
+            mediaRecorder.setVideoSize(profile.videoFrameWidth, profile.videoFrameHeight);
+        }
+        catch (Exception e)
+        {
+            Log.e(TAG, e.getLocalizedMessage());
+        }
+
+        return mediaRecorder;
     }
 
     private void createCameraSourceBack() {

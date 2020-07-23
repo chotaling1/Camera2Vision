@@ -14,6 +14,7 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -29,6 +30,7 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
+import android.media.ThumbnailUtils;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
@@ -54,6 +56,9 @@ import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
 import com.google.android.gms.vision.Frame;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.Thread.State;
 import java.lang.annotation.Retention;
@@ -199,6 +204,9 @@ public class Camera2Source {
     private VideoStopCallback videoStopCallback;
     private VideoErrorCallback videoErrorCallback;
 
+    private PreviewSnapshotCallback previewSnapshotCallback;
+
+    private boolean takeVideoSnapshot = false;
     /**
      * ID of the current {@link CameraDevice}.
      */
@@ -368,7 +376,38 @@ public class Camera2Source {
             if(mImage == null) {
                 return;
             }
-            mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+
+            if (takeVideoSnapshot && previewSnapshotCallback != null)
+            {
+                takeVideoSnapshot = false;
+                // NV21 is a plane of 8 bit Y values followed by interleaved  Cb Cr
+                ByteBuffer ib = ByteBuffer.allocate(mImage.getHeight() * mImage.getWidth() * 2);
+
+                ByteBuffer y = mImage.getPlanes()[0].getBuffer();
+                ByteBuffer cr = mImage.getPlanes()[1].getBuffer();
+                ByteBuffer cb = mImage.getPlanes()[2].getBuffer();
+                ib.put(y);
+                ib.put(cb);
+                ib.put(cr);
+
+                YuvImage yuvImage = new YuvImage(ib.array(),
+                        ImageFormat.NV21, mImage.getWidth(), mImage.getHeight(), null);
+
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                yuvImage.compressToJpeg(new Rect(0, 0,
+                        mImage.getWidth(), mImage.getHeight()), 95, out);
+                byte[] bytes = out.toByteArray();
+                Bitmap picture = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, null);
+
+
+                previewSnapshotCallback.onPreviewSnapshotTaken(picture);
+            }
+            else
+            {
+                mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+            }
+
+
 //            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
 //            byte[] bytes = new byte[buffer.capacity()];
 //            buffer.get(bytes);
@@ -391,7 +430,7 @@ public class Camera2Source {
         public void onOpened(@NonNull CameraDevice cameraDevice) {
             mCameraOpenCloseLock.release();
             mCameraDevice = cameraDevice;
-            createCameraPreviewSession();
+            createCameraPreviewAndRecordSession();
         }
         @Override
         public void onDisconnected(@NonNull CameraDevice cameraDevice) {
@@ -530,6 +569,10 @@ public class Camera2Source {
     public interface VideoErrorCallback {
         //Called when error ocurred while recording video.
         void onVideoError(String error);
+    }
+
+    public interface PreviewSnapshotCallback {
+        void onPreviewSnapshotTaken(Bitmap bitmap);
     }
 
     /**
@@ -748,19 +791,14 @@ public class Camera2Source {
         lockFocus();
     }
 
+    public void takePreviewSnapshot(PreviewSnapshotCallback callback)
+    {
+        takeVideoSnapshot = true;
+        previewSnapshotCallback = callback;
+    }
+
     public void recordVideo(VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
-
-            videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
-            MediaRecorder mediaRecorder = new MediaRecorder();
-            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            mediaRecorder.setOutputFile(videoFile);
-            mediaRecorder.setVideoEncodingBitRate(10000000);
-            mediaRecorder.setVideoFrameRate(30);
-            mediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
-            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-
-            recordVideo(mediaRecorder, videoStartCallback, videoStopCallback, videoErrorCallback);
+            recordVideo(null, videoStartCallback, videoStopCallback, videoErrorCallback);
     }
 
     public void recordVideo(MediaRecorder mediaRecorder, VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
@@ -772,15 +810,16 @@ public class Camera2Source {
                 this.videoErrorCallback.onVideoError("Camera not ready.");
                 return;
             }
-            mMediaRecorder = mediaRecorder;
-            if(swappedDimensions) {
-                mMediaRecorder.setOrientationHint(INVERSE_ORIENTATIONS.get(mDisplayOrientation));
-            } else {
-                mMediaRecorder.setOrientationHint(ORIENTATIONS.get(mDisplayOrientation));
+
+            //Default media recorder has already been prepared, so we only need to do this if a new media recorder is being provided
+            if (mediaRecorder != null)
+            {
+                mMediaRecorder = mediaRecorder;
+
+                mMediaRecorder.prepare();
             }
-            mMediaRecorder.prepare();
-            closePreviewSession();
-            createCameraRecordSession();
+
+            StartRecording();
         } catch(IOException ex) {
             Log.d(TAG, ex.getMessage());
         }
@@ -791,8 +830,8 @@ public class Camera2Source {
         mMediaRecorder.stop();
         mMediaRecorder.reset();
         videoStopCallback.onVideoStop(videoFile);
-        closePreviewSession();
-        createCameraPreviewSession();
+        //closePreviewSession();
+        //createCameraPreviewSession();
     }
 
     private TreeMap<Double, List<android.util.Size>> getAspectPictureSizes(android.util.Size[] supportedPictureSizes)
@@ -1062,7 +1101,7 @@ public class Camera2Source {
                     break;
             }
 
-            mImageReaderStill = ImageReader.newInstance(preferredAspectPictureSize.getWidth(), preferredAspectPictureSize.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
+            mImageReaderStill = ImageReader.newInstance(preferredAspectPictureSize.getWidth(), preferredAspectPictureSize.getHeight(), ImageFormat.JPEG, /*maxImages*/1);
             mImageReaderStill.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
@@ -1135,8 +1174,9 @@ public class Camera2Source {
             mFlashSupported = available == null ? false : available;
 
             configureTransform(width, height);
-
+            SetupMediaRecorder();
             manager.openCamera(mCameraId, mStateCallback, mBackgroundHandler);
+
         } catch (CameraAccessException e) {
             e.printStackTrace();
         } catch (InterruptedException e) {
@@ -1146,6 +1186,39 @@ public class Camera2Source {
             // device this code runs.
             Log.d(TAG, "Camera Error: "+e.getMessage());
         }
+    }
+
+    void SetupMediaRecorder()
+    {
+        try
+        {
+            videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
+            if (mMediaRecorder == null)
+            {
+                MediaRecorder mediaRecorder = new MediaRecorder();
+                mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+                mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                mediaRecorder.setOutputFile(videoFile);
+                mediaRecorder.setVideoEncodingBitRate(10000000);
+                mediaRecorder.setVideoFrameRate(30);
+                mediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
+                mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                mMediaRecorder = mediaRecorder;
+            }
+
+
+            if(swappedDimensions) {
+                mMediaRecorder.setOrientationHint(INVERSE_ORIENTATIONS.get(mDisplayOrientation));
+            } else {
+                mMediaRecorder.setOrientationHint(ORIENTATIONS.get(mDisplayOrientation));
+            }
+            mMediaRecorder.prepare();
+        }
+        catch (Exception e)
+        {
+            Log.e("Camera2Source", e.getMessage());
+        }
+
     }
 
     /**
@@ -1213,7 +1286,7 @@ public class Camera2Source {
                 mShutterCallback.onShutter();
             }
             // This is the CaptureRequest.Builder that we use to take a picture.
-            final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT);
             captureBuilder.addTarget(mImageReaderStill.getSurface());
 
             // Use the same AE and AF modes as the preview.
@@ -1268,7 +1341,6 @@ public class Camera2Source {
             mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(surface);
             mPreviewRequestBuilder.addTarget(mImageReaderPreview.getSurface());
-
             // Here, we create a CameraCaptureSession for camera preview.
             mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReaderPreview.getSurface(), mImageReaderStill.getSurface()), new CameraCaptureSession.StateCallback() {
                 @Override
@@ -1352,10 +1424,6 @@ public class Camera2Source {
                     } catch (CameraAccessException e) {
                         e.printStackTrace();
                     }
-
-                    //Start recording
-                    mMediaRecorder.start();
-                    videoStartCallback.onVideoStart();
                 }
 
                 @Override
@@ -1364,6 +1432,78 @@ public class Camera2Source {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+    }
+
+    public void createCameraPreviewAndRecordSession()
+    {
+        try {
+            SurfaceTexture texture = mTextureView.getSurfaceTexture();
+            assert texture != null;
+
+            // We configure the size of default buffer to be the size of camera preview we want.
+            texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
+
+            mImageReaderPreview = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 1);
+            mImageReaderPreview.setOnImageAvailableListener(mOnPreviewAvailableListener, mBackgroundHandler);
+
+            // This is the output Surface we need to start preview.
+            Surface surface = new Surface(texture);
+
+            // Set up Surface for the MediaRecorder
+            Surface recorderSurface = mMediaRecorder.getSurface();
+
+            // We set up a CaptureRequest.Builder with the output Surface.
+            mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+            mPreviewRequestBuilder.addTarget(surface);
+            mPreviewRequestBuilder.addTarget(mImageReaderPreview.getSurface());
+            mPreviewRequestBuilder.addTarget(recorderSurface);
+
+            // Start a capture session
+            mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReaderPreview.getSurface(), recorderSurface), new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    // The camera is already closed
+                    if (mCameraDevice == null) {
+                        return;
+                    }
+
+                    // When the session is ready, we start displaying the preview.
+                    mCaptureSession = cameraCaptureSession;
+
+                    try {
+                        // Auto focus should be continuous for camera preview.
+                        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, mFocusMode);
+                        if(mFlashSupported) {
+                            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, mFlashMode);
+                        }
+
+                        // Finally, we start displaying the camera preview.
+                        mPreviewRequest = mPreviewRequestBuilder.build();
+                        mCaptureSession.setRepeatingRequest(mPreviewRequest, mCaptureCallback, mBackgroundHandler);
+                    } catch (CameraAccessException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                @Override
+                public void onConfigureFailed(@NonNull CameraCaptureSession session) {Log.d(TAG, "Camera Configuration failed!");}
+
+
+            }, mBackgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void StartRecording()
+    {
+        if (mMediaRecorder != null)
+        {
+            //Start recording
+            mMediaRecorder.start();
+            videoStartCallback.onVideoStart();
+        }
+
     }
 
     /**
