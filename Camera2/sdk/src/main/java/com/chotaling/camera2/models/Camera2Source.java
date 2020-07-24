@@ -14,6 +14,7 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -54,6 +55,7 @@ import com.google.android.gms.common.images.Size;
 import com.google.android.gms.vision.Detector;
 import com.google.android.gms.vision.Frame;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.Thread.State;
 import java.lang.annotation.Retention;
@@ -198,7 +200,9 @@ public class Camera2Source {
     private VideoStartCallback videoStartCallback;
     private VideoStopCallback videoStopCallback;
     private VideoErrorCallback videoErrorCallback;
+    private PreviewSnapshotCallback previewSnapshotCallback;
 
+    private boolean takeVideoSnapshot = false;
     /**
      * ID of the current {@link CameraDevice}.
      */
@@ -368,7 +372,35 @@ public class Camera2Source {
             if(mImage == null) {
                 return;
             }
-            mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+            if (takeVideoSnapshot && previewSnapshotCallback != null)
+            {
+                takeVideoSnapshot = false;
+                // NV21 is a plane of 8 bit Y values followed by interleaved  Cb Cr
+                ByteBuffer ib = ByteBuffer.allocate(mImage.getHeight() * mImage.getWidth() * 2);
+
+                ByteBuffer y = mImage.getPlanes()[0].getBuffer();
+                ByteBuffer cr = mImage.getPlanes()[1].getBuffer();
+                ByteBuffer cb = mImage.getPlanes()[2].getBuffer();
+                ib.put(y);
+                ib.put(cb);
+                ib.put(cr);
+
+                YuvImage yuvImage = new YuvImage(ib.array(),
+                        ImageFormat.NV21, mImage.getWidth(), mImage.getHeight(), null);
+
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                yuvImage.compressToJpeg(new Rect(0, 0,
+                        mImage.getWidth(), mImage.getHeight()), 95, out);
+                byte[] bytes = out.toByteArray();
+                Bitmap picture = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, null);
+
+
+                previewSnapshotCallback.onPreviewSnapshotTaken(picture);
+            }
+            else
+            {
+                mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+            }
 //            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
 //            byte[] bytes = new byte[buffer.capacity()];
 //            buffer.get(bytes);
@@ -531,6 +563,11 @@ public class Camera2Source {
         //Called when error ocurred while recording video.
         void onVideoError(String error);
     }
+
+    public interface PreviewSnapshotCallback {
+        void onPreviewSnapshotTaken(Bitmap bitmap);
+    }
+
 
     /**
      * Callback interface used to notify on completion of camera auto focus.
@@ -746,6 +783,12 @@ public class Camera2Source {
         mShutterCallback = shutter;
         mOnImageAvailableListener.mDelegate = picCallback;
         lockFocus();
+    }
+
+    public void takePreviewSnapshot(PreviewSnapshotCallback callback)
+    {
+        takeVideoSnapshot = true;
+        previewSnapshotCallback = callback;
     }
 
     public void recordVideo(VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
