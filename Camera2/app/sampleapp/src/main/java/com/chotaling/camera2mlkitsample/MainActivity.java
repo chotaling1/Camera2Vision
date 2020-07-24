@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.Image;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -24,6 +25,13 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import com.chotaling.camera2.enums.AspectRatio;
 import com.chotaling.camera2.enums.MediaQuality;
@@ -36,10 +44,7 @@ import com.google.android.gms.vision.Tracker;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
 
 
 public class MainActivity extends AppCompatActivity {
@@ -136,7 +141,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                     } else {
                         if(useCamera2){
-                            if(mCamera2Source != null)mCamera2Source.recordVideo(camera2SourceVideoStartCallback, camera2SourceVideoStopCallback, camera2SourceVideoErrorCallback);
+                            if(mCamera2Source != null)mCamera2Source.recordVideoWithDefaultMediaRecorder(camera2SourceVideoStartCallback, camera2SourceVideoStopCallback, camera2SourceVideoErrorCallback);
                         } else {
                             if(mCameraSource != null)mCameraSource.recordVideo(cameraSourceVideoStartCallback, cameraSourceVideoStopCallback, cameraSourceVideoErrorCallback);
                         }
@@ -356,6 +361,7 @@ public class MainActivity extends AppCompatActivity {
                     .setFacing(Camera2Source.CAMERA_FACING_FRONT)
                     .setAspectRatio(AspectRatio.ASPECT_RATIO_16_9)
                     .setMediaQuality(MediaQuality.High)
+                    .setMediaRecorder(ConfigureMediaRecorder())
                     .build();
 
             //IF CAMERA2 HARDWARE LEVEL IS LEGACY, CAMERA2 IS NOT NATIVE.
@@ -374,6 +380,21 @@ public class MainActivity extends AppCompatActivity {
 
             startCameraSource();
         }
+    }
+
+    private MediaRecorder ConfigureMediaRecorder()
+    {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+        String videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
+        MediaRecorder mediaRecorder = new MediaRecorder();
+        mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        mediaRecorder.setOutputFile(videoFile);
+        mediaRecorder.setVideoEncodingBitRate(10000000);
+        mediaRecorder.setVideoFrameRate(30);
+        mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+
+        return mediaRecorder;
     }
 
     private void createCameraSourceBack() {

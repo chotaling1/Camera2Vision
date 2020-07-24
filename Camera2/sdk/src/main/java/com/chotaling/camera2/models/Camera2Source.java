@@ -194,6 +194,8 @@ public class Camera2Source {
     {
         return mVideoSize;
     }
+
+    private boolean userProvidedMediaRecorderOnBuild = false;
     private MediaRecorder mMediaRecorder;
     private SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
     private String videoFile;
@@ -399,7 +401,7 @@ public class Camera2Source {
             }
             else
             {
-                mFrameProcessor.setNextFrame(YUV_420_888toNV21(mImage));
+                mFrameProcessor.setNextFrame(convertYUV420888ToNV21(mImage));
             }
 //            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
 //            byte[] bytes = new byte[buffer.capacity()];
@@ -423,7 +425,15 @@ public class Camera2Source {
         public void onOpened(@NonNull CameraDevice cameraDevice) {
             mCameraOpenCloseLock.release();
             mCameraDevice = cameraDevice;
-            createCameraPreviewSession();
+            if (userProvidedMediaRecorderOnBuild)
+            {
+                createCameraRecordSession(false);
+            }
+            else
+            {
+                createCameraPreviewSession();
+            }
+
         }
         @Override
         public void onDisconnected(@NonNull CameraDevice cameraDevice) {
@@ -503,6 +513,13 @@ public class Camera2Source {
             return this;
         }
 
+        public Builder setMediaRecorder(MediaRecorder recorder)
+        {
+            mCameraSource.mMediaRecorder = recorder;
+            mCameraSource.userProvidedMediaRecorderOnBuild = true;
+            return this;
+        }
+
         /**
          * Creates an instance of the camera source.
          */
@@ -517,6 +534,7 @@ public class Camera2Source {
                 mCameraSource.mAspectRatio = AspectRatio.ASPECT_RATIO_16_9;
             }
             mCameraSource.mFrameProcessor = mCameraSource.new FrameProcessingRunnable(mDetector);
+
             return mCameraSource;
         }
     }
@@ -791,7 +809,28 @@ public class Camera2Source {
         previewSnapshotCallback = callback;
     }
 
-    public void recordVideo(VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
+    public void prepareMediaRecorderIfNeeded()
+    {
+        try
+        {
+            if (mMediaRecorder != null)
+            {
+                if(swappedDimensions) {
+                    mMediaRecorder.setOrientationHint(INVERSE_ORIENTATIONS.get(mDisplayOrientation));
+                } else {
+                    mMediaRecorder.setOrientationHint(ORIENTATIONS.get(mDisplayOrientation));
+                }
+                mMediaRecorder.prepare();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.e(TAG, e.getLocalizedMessage());
+        }
+
+    }
+
+    public void recordVideoWithDefaultMediaRecorder(VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
 
             videoFile = Environment.getExternalStorageDirectory() + "/" + formatter.format(new Date()) + ".mp4";
             MediaRecorder mediaRecorder = new MediaRecorder();
@@ -800,32 +839,33 @@ public class Camera2Source {
             mediaRecorder.setOutputFile(videoFile);
             mediaRecorder.setVideoEncodingBitRate(10000000);
             mediaRecorder.setVideoFrameRate(30);
-            mediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
             mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
 
             recordVideo(mediaRecorder, videoStartCallback, videoStopCallback, videoErrorCallback);
     }
 
     public void recordVideo(MediaRecorder mediaRecorder, VideoStartCallback videoStartCallback, VideoStopCallback videoStopCallback, VideoErrorCallback videoErrorCallback) {
-        try {
-            this.videoStartCallback = videoStartCallback;
-            this.videoStopCallback = videoStopCallback;
-            this.videoErrorCallback = videoErrorCallback;
-            if(mCameraDevice == null || !mTextureView.isAvailable() || mPreviewSize == null){
-                this.videoErrorCallback.onVideoError("Camera not ready.");
-                return;
-            }
+
+        this.videoStartCallback = videoStartCallback;
+        this.videoStopCallback = videoStopCallback;
+        this.videoErrorCallback = videoErrorCallback;
+        if(mCameraDevice == null || !mTextureView.isAvailable() || mPreviewSize == null){
+            this.videoErrorCallback.onVideoError("Camera not ready.");
+            return;
+        }
+
+        //If the user provides a media recorder on the call to record video, then prepare the media recorder and record a capture session
+        if (mediaRecorder != null)
+        {
             mMediaRecorder = mediaRecorder;
-            if(swappedDimensions) {
-                mMediaRecorder.setOrientationHint(INVERSE_ORIENTATIONS.get(mDisplayOrientation));
-            } else {
-                mMediaRecorder.setOrientationHint(ORIENTATIONS.get(mDisplayOrientation));
-            }
-            mMediaRecorder.prepare();
+            prepareMediaRecorderIfNeeded();
             closePreviewSession();
-            createCameraRecordSession();
-        } catch(IOException ex) {
-            Log.d(TAG, ex.getMessage());
+            createCameraRecordSession(true);
+        }
+        //If the user provided a media recorder upon building the Camera Source then just start recording
+        else if (userProvidedMediaRecorderOnBuild && mMediaRecorder != null)
+        {
+            StartRecording();
         }
     }
 
@@ -1179,6 +1219,10 @@ public class Camera2Source {
 
             configureTransform(width, height);
 
+            if (userProvidedMediaRecorderOnBuild)
+            {
+                prepareMediaRecorderIfNeeded();
+            }
             manager.openCamera(mCameraId, mStateCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -1347,7 +1391,7 @@ public class Camera2Source {
         }
     }
 
-    private void createCameraRecordSession() {
+    private void createCameraRecordSession(boolean shouldRecord) {
         try {
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
             assert texture != null;
@@ -1396,9 +1440,12 @@ public class Camera2Source {
                         e.printStackTrace();
                     }
 
-                    //Start recording
-                    mMediaRecorder.start();
-                    videoStartCallback.onVideoStart();
+                    if (shouldRecord)
+                    {
+                        StartRecording();
+                    }
+
+
                 }
 
                 @Override
@@ -1407,6 +1454,13 @@ public class Camera2Source {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+    }
+
+    private void StartRecording()
+    {
+        //Start recording
+        mMediaRecorder.start();
+        videoStartCallback.onVideoStart();
     }
 
     /**
@@ -1516,13 +1570,6 @@ public class Camera2Source {
                         return;
                     }
 
-//                    outputFrame = new Frame.Builder()
-//                            .setImageData(ByteBuffer.wrap(mPendingFrameData), mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.NV21)
-//                            .setId(mPendingFrameId)
-//                            .setTimestampMillis(mPendingTimeMillis)
-//                            .setRotation(getDetectorOrientation(mSensorOrientation))
-//                            .build();
-
                     outputFrame = new Frame.Builder()
                             .setImageData(ByteBuffer.wrap(mPendingFrameData), mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.NV21)
                             .setId(mPendingFrameId)
@@ -1579,76 +1626,6 @@ public class Camera2Source {
         }
     }
 
-    private byte[] YUV_420_888toNV21(Image image) {
-
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int ySize = width * height;
-        int uvSize = width * height / 4;
-
-        byte[] nv21 = new byte[ySize + uvSize * 2];
-
-        ByteBuffer yBuffer = image.getPlanes()[0].getBuffer(); // Y
-        ByteBuffer uBuffer = image.getPlanes()[1].getBuffer(); // U
-        ByteBuffer vBuffer = image.getPlanes()[2].getBuffer(); // V
-
-        int rowStride = image.getPlanes()[0].getRowStride();
-        assert (image.getPlanes()[0].getPixelStride() == 1);
-
-        int pos = 0;
-
-        if (rowStride == width) { // likely
-            yBuffer.get(nv21, 0, ySize);
-            pos += ySize;
-        } else {
-            int yBufferPos = width - rowStride; // not an actual position
-            for (; pos < ySize; pos += width) {
-                yBufferPos += rowStride - width;
-                yBuffer.position(yBufferPos);
-                yBuffer.get(nv21, pos, width);
-            }
-        }
-
-        rowStride = image.getPlanes()[2].getRowStride();
-        int pixelStride = image.getPlanes()[2].getPixelStride();
-
-        assert (rowStride == image.getPlanes()[1].getRowStride());
-        assert (pixelStride == image.getPlanes()[1].getPixelStride());
-
-        if (pixelStride == 2 && rowStride == width && uBuffer.get(0) == vBuffer.get(1)) {
-            // maybe V an U planes overlap as per NV21, which means vBuffer[1] is alias of uBuffer[0]
-            byte savePixel = vBuffer.get(1);
-            try {
-                vBuffer.put(1, (byte) ~savePixel);
-                if (uBuffer.get(0) == (byte) ~savePixel) {
-                    vBuffer.put(1, savePixel);
-                    vBuffer.get(nv21, ySize, uvSize);
-
-                    return nv21; // shortcut
-                }
-
-
-                // unfortunately, the check failed. We must save U and V pixel by pixel
-                vBuffer.put(1, savePixel);
-            } catch (Exception ex) {
-                // unfortunately, we cannot check if vBuffer and uBuffer overlap
-            }
-
-            // other optimizations could check if (pixelStride == 1) or (pixelStride == 2),
-            // but performance gain would be less significant
-
-            for (int row = 0; row < height / 2; row++) {
-                for (int col = 0; col < width / 2; col++) {
-                    int vuPos = col * pixelStride + row * rowStride;
-                    nv21[pos++] = vBuffer.get(vuPos);
-                    nv21[pos++] = uBuffer.get(vuPos);
-                }
-            }
-        }
-
-        return nv21;
-    }
-
     private byte[] convertYUV420888ToNV21(Image imgYUV420) {
         // Converting YUV_420_888 data to NV21.
         byte[] data;
@@ -1656,7 +1633,7 @@ public class Camera2Source {
         ByteBuffer buffer2 = imgYUV420.getPlanes()[2].getBuffer();
         int buffer0_size = buffer0.remaining();
         int buffer2_size = buffer2.remaining();
-        data = new byte[buffer0_size];
+        data = new byte[buffer0_size + buffer2_size];
         buffer0.get(data, 0, buffer0_size);
         buffer2.get(data, buffer0_size, buffer2_size);
         return data;
