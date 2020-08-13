@@ -36,6 +36,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.SizeF;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.view.MotionEvent;
@@ -116,7 +117,12 @@ public class Camera2Source {
     private static float ASPECT_RATIO_16_9 = 16f/9f;
     private static float ASPECT_RATIO_4_3 = 4f/3f;
     private AspectRatio mAspectRatio;
+    private boolean enforceAspectRatio;
 
+    public boolean getEnforceAspectRatio()
+    {
+        return enforceAspectRatio;
+    }
     private MediaQuality mMediaQuality;
     /**
      * A reference to the opened {@link CameraDevice}.
@@ -492,6 +498,7 @@ public class Camera2Source {
         public Builder setAspectRatio(AspectRatio aspectRatio)
         {
             mCameraSource.mAspectRatio = aspectRatio;
+            mCameraSource.enforceAspectRatio = true;
             return this;
         }
 
@@ -951,10 +958,6 @@ public class Camera2Source {
             if (!entries.isEmpty())
             {
                 bestSize = (android.util.Size) entries.get(entries.size() - 1);
-                if ((double) entry.getKey() == ratioTolerance)
-                {
-                    return new Size(bestSize.getWidth(), bestSize.getHeight());
-                }
             }
         }
         return new Size(bestSize.getWidth(), bestSize.getHeight());
@@ -971,10 +974,6 @@ public class Camera2Source {
             {
                 int index = entries.size()/2;
                 bestSize = (android.util.Size) entries.get(index);
-                if ((double) entry.getKey() == ratioTolerance)
-                {
-                    return new Size(bestSize.getWidth(), bestSize.getHeight());
-                }
             }
         }
         return new Size(bestSize.getWidth(), bestSize.getHeight());
@@ -990,10 +989,6 @@ public class Camera2Source {
             if (!entries.isEmpty())
             {
                 bestSize = (android.util.Size) entries.get(0);
-                if ((double) entry.getKey() == ratioTolerance)
-                {
-                    return new Size(bestSize.getWidth(), bestSize.getHeight());
-                }
             }
         }
         return new Size(bestSize.getWidth(), bestSize.getHeight());
@@ -1015,25 +1010,66 @@ public class Camera2Source {
      * @param aspectRatio       The aspect ratio
      * @return The optimal {@code Size}, or an arbitrary one if none were big enough
      */
-    private static Size chooseOptimalSize(Size[] choices, int textureViewWidth, int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
+    private Size chooseOptimalSize(Size[] choices, int textureViewWidth, int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
 
         // Collect the supported resolutions that are at least as big as the preview Surface
         List<Size> bigEnough = new ArrayList<>();
         // Collect the supported resolutions that are smaller than the preview Surface
         List<Size> notBigEnough = new ArrayList<>();
-        int w = aspectRatio.getWidth();
-        int h = aspectRatio.getHeight();
-        for (Size option : choices) {
-            if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight &&
-                    option.getHeight() == option.getWidth() * h / w) {
-                if (option.getWidth() >= textureViewWidth &&
-                        option.getHeight() >= textureViewHeight) {
-                    bigEnough.add(option);
+        float targetRatio = (mAspectRatio.equals(AspectRatio.ASPECT_RATIO_4_3)) ? (ASPECT_RATIO_4_3) : (ASPECT_RATIO_16_9);
+        TreeMap<Double, List<Size>> diffs = new TreeMap<>();
+
+        //Select supported sizes which ratio is less than ratioTolerance
+        for (Size size : choices) {
+            float ratio = (float) size.getWidth() / size.getHeight();
+            double diff = Math.abs(ratio - targetRatio);
+            if (diff < ratioTolerance){
+                if (diffs.keySet().contains(diff)){
+                    //add the value to the list
+                    diffs.get(diff).add(size);
                 } else {
-                    notBigEnough.add(option);
+                    List<Size> newList = new ArrayList<>();
+                    newList.add(size);
+                    diffs.put(diff, newList);
                 }
             }
         }
+
+        //If no sizes were supported, (strange situation) establish a higher ratioTolerance
+        if(diffs.isEmpty()) {
+            for (Size size : choices) {
+                float ratio = (float)size.getWidth() / size.getHeight();
+                double diff = Math.abs(ratio - targetRatio);
+                if (diff < maxRatioTolerance){
+                    if (diffs.keySet().contains(diff)){
+                        //add the value to the list
+                        diffs.get(diff).add(size);
+                    } else {
+                        List<Size> newList = new ArrayList<>();
+                        newList.add(size);
+                        diffs.put(diff, newList);
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry entry: diffs.entrySet()){
+            List<Size> entries = (List) entry.getValue();
+            if (!entries.isEmpty())
+            {
+                for (Size option : entries) {
+                    if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight) {
+                        if (option.getWidth() >= textureViewWidth &&
+                                option.getHeight() >= textureViewHeight) {
+                            bigEnough.add(option);
+                        } else {
+                            notBigEnough.add(option);
+                        }
+                    }
+                }
+            }
+        }
+
 
         // Pick the smallest of those big enough. If there is no one big enough, pick the
         // largest of those not big enough.

@@ -195,6 +195,7 @@ public class CameraSourcePreview extends ViewGroup {
     {
         int width = 320;
         int height = 240;
+        boolean enforceAspectRatio = false;
         if(usingCameraOne) {
             if (mCameraSource != null) {
                 Size size = mCameraSource.getPreviewSize();
@@ -206,6 +207,7 @@ public class CameraSourcePreview extends ViewGroup {
         } else {
             if (mCamera2Source != null) {
                 Size size = mCamera2Source.getPreviewSize();
+                enforceAspectRatio = mCamera2Source.getEnforceAspectRatio();
                 if (size != null) {
                     height = size.getHeight();
                     width = size.getWidth();
@@ -222,7 +224,7 @@ public class CameraSourcePreview extends ViewGroup {
 
 
         //RESIZE PREVIEW IGNORING ASPECT RATIO. THIS IS ESSENTIAL.
-        int newHeight = (width * getHeight()) / getWidth();
+        int newHeight = (enforceAspectRatio) ? height : (width * getHeight()) / getWidth();
 
         final int layoutWidth = right - left;
         final int layoutHeight = bottom - top;
