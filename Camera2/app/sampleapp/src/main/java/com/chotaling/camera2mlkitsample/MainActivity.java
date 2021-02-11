@@ -22,6 +22,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.*;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -35,6 +36,7 @@ import java.util.Locale;
 
 import com.chotaling.camera2.enums.AspectRatio;
 import com.chotaling.camera2.enums.MediaQuality;
+import com.chotaling.camera2.interfaces.CameraSourcePreviewCallbacks;
 import com.chotaling.camera2.models.*;
 import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.ConnectionResult;
@@ -91,6 +93,17 @@ public class MainActivity extends AppCompatActivity {
         switchButton = (Button) findViewById(R.id.btn_switch);
         videoButton = (Button) findViewById(R.id.btn_video);
         mPreview = (CameraSourcePreview) findViewById(R.id.preview);
+        mPreview.SetCallbacks(new CameraSourcePreviewCallbacks() {
+            @Override
+            public void OnError(String message, Exception e) {
+                new AlertDialog.Builder(getApplicationContext()).setMessage(message).setPositiveButton("Ok", null).show();
+            }
+
+            @Override
+            public void OnMessage(String message) {
+                new AlertDialog.Builder(getApplicationContext()).setMessage(message).setPositiveButton("Ok", null).show();
+            }
+        });
         mGraphicOverlay = (GraphicOverlay) findViewById(R.id.faceOverlay);
         cameraVersion = (TextView) findViewById(R.id.cameraVersion);
         ivAutoFocus = (ImageView) findViewById(R.id.ivAutoFocus);
@@ -361,7 +374,7 @@ public class MainActivity extends AppCompatActivity {
                     .setFacing(Camera2Source.CAMERA_FACING_FRONT)
                     .setAspectRatio(AspectRatio.ASPECT_RATIO_16_9)
                     .setMediaQuality(MediaQuality.High)
-                    .setMediaRecorder(ConfigureMediaRecorder())
+                    //.setMediaRecorder(ConfigureMediaRecorder())
                     .build();
 
             //IF CAMERA2 HARDWARE LEVEL IS LEGACY, CAMERA2 IS NOT NATIVE.

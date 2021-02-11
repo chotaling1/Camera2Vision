@@ -12,6 +12,7 @@ import android.view.TextureView;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 
+import com.chotaling.camera2.interfaces.CameraSourcePreviewCallbacks;
 import com.chotaling.camera2.utils.Utils;
 import com.google.android.gms.common.images.Size;
 
@@ -39,6 +40,29 @@ public class CameraSourcePreview extends ViewGroup {
     private int screenWidth;
     private int screenHeight;
     private int screenRotation;
+
+    private CameraSourcePreviewCallbacks _callbacks;
+
+    public void SetCallbacks(CameraSourcePreviewCallbacks callbacks)
+    {
+        _callbacks = callbacks;
+    }
+
+    private void LogError(String message, Exception e)
+    {
+        if (_callbacks != null)
+        {
+            _callbacks.OnError(message, e);
+        }
+    }
+
+    private void LogMessage(String message)
+    {
+        if (_callbacks != null)
+        {
+            _callbacks.OnMessage(message);
+        }
+    }
 
     public CameraSourcePreview(Context context) {
         super(context);
@@ -87,12 +111,23 @@ public class CameraSourcePreview extends ViewGroup {
                 addView(mSurfaceView);
                 viewAdded = true;
             }
-            try {startIfReady();} catch (IOException e) {Log.e(TAG, "Could not start camera source.", e);}
+            try
+            {
+                startIfReady();
+            }
+            catch (IOException e)
+            {
+                LogError(e.getMessage(), e);
+                Log.e(TAG, "Could not start camera source.", e);
+            }
         }
     }
 
     private void start(Camera2Source camera2Source) throws IOException {
-        if (camera2Source == null) {stop();}
+        if (camera2Source == null)
+        {
+            stop();
+        }
         mCamera2Source = camera2Source;
         if(mCamera2Source != null) {
             mStartRequested = true;
@@ -100,7 +135,15 @@ public class CameraSourcePreview extends ViewGroup {
                 addView(mAutoFitTextureView);
                 viewAdded = true;
             }
-            try {startIfReady();} catch (IOException e) {Log.e(TAG, "Could not start camera source.", e);}
+            try
+            {
+                startIfReady();
+            }
+            catch (IOException e)
+            {
+                LogError(e.getMessage(), e);
+                Log.e(TAG, "Could not start camera source.", e);
+            }
         }
     }
 
@@ -153,7 +196,12 @@ public class CameraSourcePreview extends ViewGroup {
                     }
                     mStartRequested = false;
                 }
-            } catch (SecurityException e) {Log.d(TAG, "SECURITY EXCEPTION: "+e);}
+            }
+            catch (SecurityException e)
+            {
+                LogError(e.getMessage(), e);
+                Log.d(TAG, "SECURITY EXCEPTION: "+e);
+            }
         }
     }
 
@@ -162,7 +210,15 @@ public class CameraSourcePreview extends ViewGroup {
         public void surfaceCreated(SurfaceHolder surface) {
             mSurfaceAvailable = true;
             mOverlay.bringToFront();
-            try {startIfReady();} catch (IOException e) {Log.e(TAG, "Could not start camera source.", e);}
+            try
+            {
+                startIfReady();
+            }
+            catch (IOException e)
+            {
+                LogError(e.getMessage(), e);
+                Log.e(TAG, "Could not start camera source.", e);
+            }
         }
         @Override
         public void surfaceDestroyed(SurfaceHolder surface) {
@@ -177,7 +233,15 @@ public class CameraSourcePreview extends ViewGroup {
         public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
             mSurfaceAvailable = true;
             mOverlay.bringToFront();
-            try {startIfReady();} catch (IOException e) {Log.e(TAG, "Could not start camera source.", e);}
+            try
+            {
+                startIfReady();
+            }
+            catch (IOException e)
+            {
+                LogError(e.getMessage(), e);
+                Log.e(TAG, "Could not start camera source.", e);
+            }
         }
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
@@ -248,6 +312,7 @@ public class CameraSourcePreview extends ViewGroup {
         }
         catch (IOException e)
         {
+            LogError(e.getMessage(), e);
             Log.e(TAG, "Could not start camera source.", e);
         }
 
